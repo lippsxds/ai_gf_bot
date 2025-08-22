@@ -1,28 +1,41 @@
 import os
+import random
 from pyrogram import Client, filters
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from dotenv import load_dotenv
-from googletrans import Translator
-import random
+
+# Translation
+from deep_translator import GoogleTranslator
+from langdetect import detect
 
 load_dotenv()
 
+# ----- ENV VARIABLES -----
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# ----- BOT CLIENT -----
 app = Client("ai_gf_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Load Hugging Face DialoGPT model
+# ----- LOAD MODEL -----
 model_name = "microsoft/DialoGPT-medium"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name)
 
-translator = Translator()
+# ----- TRANSLATOR WRAPPER -----
+class TranslatorWrapper:
+    def translate(self, text, dest='en'):
+        return GoogleTranslator(source='auto', target=dest).translate(text)
+    
+    def detect(self, text):
+        return type('obj', (), {'lang': detect(text)})
+
+translator = TranslatorWrapper()
 chat_history = {}
 
-# Mood keywords & media
+# ----- MOODS -----
 moods = {
     "happy": ["happy", "lol", "haha", "yay", "funny", "good"],
     "romantic": ["love", "miss", "heart", "romantic", "darling", "sweet"],
@@ -44,7 +57,7 @@ mood_emojis = {
     "angry": "😠🔥😡"
 }
 
-# Load quotes/shayari
+# ----- LOAD QUOTES -----
 def load_quotes(mood):
     path = f"quotes/{mood}.txt"
     if os.path.exists(path):
@@ -52,6 +65,7 @@ def load_quotes(mood):
             return f.read().splitlines()
     return []
 
+# ----- DETECT MOOD -----
 def detect_mood(text):
     text = text.lower()
     for mood, keywords in moods.items():
@@ -59,6 +73,7 @@ def detect_mood(text):
             return mood
     return None
 
+# ----- BOT MESSAGE HANDLER -----
 @app.on_message(filters.private | filters.group)
 async def ai_gf_reply(client, message):
     if not message.text:
@@ -69,7 +84,7 @@ async def ai_gf_reply(client, message):
     text = message.text
 
     # Translate to English for model
-    translated_text = translator.translate(text, dest='en').text
+    translated_text = translator.translate(text, dest='en')
 
     # Chat history
     if user_id in chat_history:
@@ -85,29 +100,28 @@ async def ai_gf_reply(client, message):
     chat_history[user_id] = chat_history_ids
 
     # Translate reply back to user language
-    reply = translator.translate(reply_en, dest=translator.detect(text).lang).text
+    reply = translator.translate(reply_en, dest=translator.detect(text).lang)
 
     # Mood detection
     mood = detect_mood(text)
     if mood:
-        # Sticker/GIF
         media_list = mood_media.get(mood, [])
         if media_list:
             media_id = random.choice(media_list)
             await message.reply_sticker(media_id)
-        # Quote/shayari
+
         quotes = load_quotes(mood)
         if quotes:
             reply += f"\n\n💌 {random.choice(quotes)}"
-        # Emoji reaction
+
         reply += f" {mood_emojis.get(mood,'')}"
 
-    # Add personalized tag in group
+    # Add personalized tag in groups
     if message.chat.type != "private":
         reply = f"@{message.from_user.username or username}, {reply}"
 
-    # Add final signature
-    reply += "\n\n— My Boyfriend @Lippsxd ❤️"
+    # Final signature
+    reply += "\n\n— my Boyfriend @Lippsxd ❤️"
 
     await message.reply_text(reply)
 
