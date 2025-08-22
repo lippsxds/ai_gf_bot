@@ -1,5 +1,5 @@
 pyrogram==2.0.34
 tgcrypto==1.2.5
 transformers==4.44.0
-torch==2.1.0
+torch==2.0.1
 python-dotenv==1.0.1
