@@ -1,8 +1,5 @@
-pyrogram
-tgcrypto
-transformers
-torch
-python-dotenv
-deep_translator
-langdetect
-googletrans==4.0.0-rc1
+pyrogram==2.0.34
+tgcrypto==1.3.1
+transformers==4.44.0
+torch==2.1.0
+python-dotenv==1.0.1
