@@ -1,4 +1,3 @@
-# bot.py
 import os
 import requests
 from pyrogram import Client, filters
@@ -77,7 +76,14 @@ async def handle_message(client, message):
         else:
             ai_reply = ai_reply_en
 
-        await message.reply_text(ai_reply)
+        # Prepare mention
+        if message.from_user:
+            mention = f"[{message.from_user.first_name}](tg://user?id={message.from_user.id})"
+        else:
+            mention = ""
+
+        # Reply with mention
+        await message.reply_text(f"{mention}, {ai_reply}", parse_mode="markdown")
 
     except Exception as e:
         await message.reply_text(f"⚠️ Exception: {e}")
