@@ -122,6 +122,7 @@ async def ai_gf_reply(client, message):
 
     # Final signature
     reply += "\n\n— my Boyfriend @Lippsxd ❤️"
+    reply += "\nMade by @Lippsxd"
 
     await message.reply_text(reply)
 
