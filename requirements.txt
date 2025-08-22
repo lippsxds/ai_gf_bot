@@ -3,5 +3,6 @@ tgcrypto
 transformers
 torch
 python-dotenv
-deep-translator
+deep_translator
 langdetect
+googletrans==4.0.0-rc1
