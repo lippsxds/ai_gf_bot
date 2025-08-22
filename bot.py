@@ -10,12 +10,12 @@ import random
 # ----- Load Environment Variables -----
 load_dotenv()
 API_ID = int(os.environ.get("API_ID"))
-API_HASH = os.environ.get("API_HASH")
+API_HASH = os.environ.get("API_HASH"))
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")  # Hugging Face token
 
 HEADERS = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-MODEL = "tiiuae/falcon-7b-instruct"  # Free Hugging Face model
+MODEL = "google/flan-t5-small"  # Ultra-light, fast model
 
 # ----- Initialize Bot -----
 bot = Client(
@@ -28,12 +28,12 @@ bot = Client(
 # ----- AI Reply Function -----
 async def get_ai_reply(text):
     try:
-        payload = {"inputs": text, "options": {"use_cache": False}}
+        payload = {"inputs": text, "options": {"use_cache": True}}
         response = requests.post(
             f"https://api-inference.huggingface.co/models/{MODEL}",
             headers=HEADERS,
             json=payload,
-            timeout=60
+            timeout=15  # Very short timeout for speed
         )
         data = response.json()
         if isinstance(data, list) and "generated_text" in data[0]:
@@ -42,6 +42,8 @@ async def get_ai_reply(text):
             return f"⚠️ Error: {data['error']}"
         else:
             return str(data)
+    except requests.exceptions.Timeout:
+        return "⚠️ Sorry, the AI took too long. Try again!"
     except Exception as e:
         return f"⚠️ Exception: {e}"
 
@@ -49,13 +51,14 @@ async def get_ai_reply(text):
 @bot.on_message(filters.text & ~filters.bot)
 async def handle_message(client, message):
     try:
-        await asyncio.sleep(random.uniform(0.5, 2.5))  # Human-like delay
+        # Very short human-like delay
+        await asyncio.sleep(random.uniform(0.2, 0.8))
         await message.chat.send_action("typing")
 
-        # In groups, reply only when bot is mentioned OR random chance
+        # Only reply in groups if bot is mentioned OR 10% chance
         if message.chat.type in ["group", "supergroup"]:
             bot_username = (await bot.get_me()).username.lower()
-            if bot_username not in message.text.lower() and random.randint(1, 5) > 1:
+            if bot_username not in message.text.lower() and random.randint(1, 10) > 1:
                 return
 
         # Detect language
@@ -77,10 +80,7 @@ async def handle_message(client, message):
             ai_reply = ai_reply_en
 
         # Prepare mention
-        if message.from_user:
-            mention = f"[{message.from_user.first_name}](tg://user?id={message.from_user.id})"
-        else:
-            mention = ""
+        mention = f"[{message.from_user.first_name}](tg://user?id={message.from_user.id})" if message.from_user else ""
 
         # Reply with mention
         await message.reply_text(f"{mention}, {ai_reply}", parse_mode="markdown")
