@@ -1,107 +1,86 @@
+# bot.py
 import os
-import random
+import requests
 from pyrogram import Client, filters
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+from langdetect import detect
+from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
+import asyncio
+import random
 
+# ----- Load Environment Variables -----
 load_dotenv()
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN")  # Hugging Face token
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+HEADERS = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+MODEL = "tiiuae/falcon-7b-instruct"  # Free Hugging Face model
 
-app = Client("ai_gf_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ----- Initialize Bot -----
+bot = Client(
+    "MiniChatGPTBot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
 
-# Lightweight model
-model_name = "microsoft/DialoGPT-small"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+# ----- AI Reply Function -----
+async def get_ai_reply(text):
+    try:
+        payload = {"inputs": text, "options": {"use_cache": False}}
+        response = requests.post(
+            f"https://api-inference.huggingface.co/models/{MODEL}",
+            headers=HEADERS,
+            json=payload,
+            timeout=60
+        )
+        data = response.json()
+        if isinstance(data, list) and "generated_text" in data[0]:
+            return data[0]["generated_text"]
+        elif "error" in data:
+            return f"⚠️ Error: {data['error']}"
+        else:
+            return str(data)
+    except Exception as e:
+        return f"⚠️ Exception: {e}"
 
-chat_history = {}
+# ----- Handle Messages in Groups and DMs -----
+@bot.on_message(filters.text & ~filters.bot)
+async def handle_message(client, message):
+    try:
+        await asyncio.sleep(random.uniform(0.5, 2.5))  # Human-like delay
+        await message.chat.send_action("typing")
 
-# Mood keywords
-moods = {
-    "happy": ["happy","lol","haha","yay","funny","good"],
-    "romantic": ["love","miss","heart","romantic","darling","sweet"],
-    "sad": ["sad","lonely","cry","pain","depressed"],
-    "angry": ["angry","mad","hate","frustrated","annoyed"]
-}
+        # In groups, reply only when bot is mentioned OR random chance
+        if message.chat.type in ["group", "supergroup"]:
+            bot_username = (await bot.get_me()).username.lower()
+            if bot_username not in message.text.lower() and random.randint(1, 5) > 1:
+                return
 
-# Mood emojis
-mood_emojis = {
-    "happy": "😄🎉✨",
-    "romantic": "❤️💌😍",
-    "sad": "😢💔😔",
-    "angry": "😠🔥😡"
-}
+        # Detect language
+        user_lang = detect(message.text)
 
-# Stickers for moods
-mood_stickers = {
-    "happy": ["CAACAgIAAxkBAAEGhWFiw5jL3V6O1QyJ1JXSljG5GGL6VwACpQADVp29Cl2t3GVmTnZlIwQ"],
-    "romantic": ["CAACAgIAAxkBAAEGhWFiw5iUgfP4rJ0gQ7Hx7VjB9iAAfZQACpQADVp29Ck4i9ZfIEXj7IwQ"],
-    "sad": ["CAACAgIAAxkBAAEGhWFiw5jZC7dqE-Jb8vWgHtF4Jv0ppwACpwADVp29CnY1vhLwY3MUwQ"],
-    "angry": ["CAACAgIAAxkBAAEGhWFiw5jao2U1xZqEcxzHTm6CnD_V_gACqgADVp29Cq1Z84fpfrK4IwQ"]
-}
+        # Translate to English if needed
+        if user_lang != "en":
+            text_for_ai = GoogleTranslator(source=user_lang, target="en").translate(message.text)
+        else:
+            text_for_ai = message.text
 
-# Load quotes
-def load_quotes(mood):
-    path = f"quotes/{mood}.txt"
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().splitlines()
-    return []
+        # Get AI reply
+        ai_reply_en = await get_ai_reply(text_for_ai)
 
-# Detect mood
-def detect_mood(text):
-    text = text.lower()
-    for mood, keywords in moods.items():
-        if any(word in text for word in keywords):
-            return mood
-    return None
+        # Translate back to user's language if needed
+        if user_lang != "en":
+            ai_reply = GoogleTranslator(source="en", target=user_lang).translate(ai_reply_en)
+        else:
+            ai_reply = ai_reply_en
 
-@app.on_message(filters.private | filters.group)
-async def ai_reply(client, message):
-    if not message.text:
-        return
+        await message.reply_text(ai_reply)
 
-    text = message.text
-    user_id = message.from_user.id
-    username = message.from_user.first_name or "User"
+    except Exception as e:
+        await message.reply_text(f"⚠️ Exception: {e}")
 
-    # Chat history (last 2 messages)
-    prev = chat_history.get(user_id, [])
-    new_input = tokenizer.encode(text + tokenizer.eos_token, return_tensors="pt")
-    bot_input = torch.cat(prev + [new_input], dim=-1) if prev else new_input
-
-    chat_ids = model.generate(bot_input, max_length=100, pad_token_id=tokenizer.eos_token_id)
-    reply_text = tokenizer.decode(chat_ids[:, bot_input.shape[-1]:][0], skip_special_tokens=True)
-
-    chat_history[user_id] = (prev + [new_input])[-2:]
-
-    # Mood detection
-    mood = detect_mood(text)
-    if mood:
-        # Send sticker
-        stickers = mood_stickers.get(mood, [])
-        if stickers:
-            await message.reply_sticker(random.choice(stickers))
-
-        # Append quote
-        quotes = load_quotes(mood)
-        if quotes:
-            reply_text += f"\n\n💌 {random.choice(quotes)}"
-
-        reply_text += f" {mood_emojis.get(mood,'')}"
-
-    # Mention in group
-    if message.chat.type != "private":
-        reply_text = f"@{message.from_user.username or username}, {reply_text}"
-
-    # Signature
-    reply_text += "\n\n— my boyFriend @lippsxd ❤️"
-
-    await message.reply_text(reply_text)
-
-print("Lightweight AI Telegram Bot with group & stickers is running...")
-app.run()
+# ----- Run Bot -----
+bot.run()
